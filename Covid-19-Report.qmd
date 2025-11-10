@@ -1,0 +1,208 @@
+---
+title: "Covid-19-Report"
+format: html
+---
+
+#Introduction
+The dataset “covid_full_data.csv” primarily illustrates the number of Covid-19 cases and deaths in the world by country. This dataset has potential in demonstrating the trajectory of the spread of Covid-19 across the world, allowing for cross-country comparison. This, in turn, allows us to meaningfully evaluate the impacts of Covid-19 across countries: survival rate, impact on public health policies, income, et cetera.
+The following packages were used in data analysis in Rstudio. The pacman function allows for ethical reproducibility by ensuring that the packages are not downloaded without consent by the viewer of the Rscript. 
+```{r}
+#| label: Packages required
+if (!require("pacman")){
+  install.packages("pacman")
+}
+library(pacman)
+pacman::p_load(
+  tidyverse,
+  skimr,
+  ggplot2,
+  gridExtra,
+  purrr,
+  dplyr,
+)
+```
+
+#Initial data inspection
+The raw csv dataset was then stored as an object “covid_df_raw” within the Rscript. Thereafter, view( ), skim( ) and str( ) was utilized to gain a brief understanding of the structure of the dataset. To sift out the countries represented in the dataset, distinct( ) was used. While providing me with the full list of countries included, this also allowed me to recognize that some observations in the variable “location” were continents and income classifications.
+```{r}
+#| label: Inspecting dataset
+str(covid_df_raw)
+skim(covid_df_raw)
+summary(covid_df_raw)
+names(covid_df_raw)
+#The dataset comprises of the following variables:
+#date, location, new_cases, new_deaths, total_cases, total_deaths, 
+#weekly_cases, weekly_deaths, biweekly_cases, biweekly_deaths
+```
+
+I saw potential in deriving meaningful data analysis from income classifications and the world statistics. This report thus explores 3 data visualisations across 2 Rscripts, utilising the “covid_full_data.csv” dataset. Firstly, I look into the total cases and deaths across the world in order to gain a broad understanding of the Covid-19 trends across time. Thereafter, I intend to explore the trend in new cases and deaths across the world, thus gaining insight into whether the world was able to reduce Covid-19 mortality rates. Finally, I inspect the survival rates across income groups, to understand the impacts of countries’ income on how they dealt with Covid-19. 
+
+#World Covid-19 Statistics
+I created a new Rscript titled “Covid-19-World.R” to explore the general Covid-19 trend in the world. To achieve this, I created a new dataframe “world_covid_daily” out of the raw dataframe, singling out observations where location = World.
+```{r}
+#| label: Creating Covid-19 World dataframe
+world_covid_daily <- covid_df_raw%>%
+  filter(location == "World")
+view(world_covid_daily)
+```
+
+I observed that observations were only updated weekly. Hence, to mitigate the effects of the value 0 on the final graphical output, slice( ) was used to extract 1 row per every 7 rows. This was coded into a new dataframe, “world_covid_weekly”. Furthermore, the variables “weekly_cases”, “weekly_deaths”, “biweekly_cases” and “biweekly_deaths” were omitted from the new dataframe, in order to simplify the data visualisation process. As the location was constant “World”, this variable was omitted from the dataframe as well. 
+```{r}
+#| label: Create Covid-19 World Weekly dataframe
+world_covid_weekly <- world_covid_daily%>%
+  slice(seq(1, n(),by=7))%>%
+  select("date","location","new_cases","new_deaths",
+         "total_cases","total_deaths",-"location")
+view(world_covid_weekly)
+```
+
+After tidying the data, I then sought to inspect summary statistics through summary( ) function, which extracted the mean and median. To find the standard deviation, I created the following function. It calculates the standard deviation for each column, excluding NA values.
+```{r}
+#Data inspection
+summary(world_covid_weekly)
+#Create function to calculate standard deviation
+standard_deviation <- function(data, columns) {
+  sds <- sapply(data[columns], sd, na.rm = TRUE)
+  return(sds)
+}
+view(standard_deviation(world_covid_weekly))
+```
+High standard deviation was observed for all variables (disregarding date), meaning that dispersion from the median for cases and deaths are high. This means that the number of cases and deaths fluctuated greatly over the time period. These fluctuations were thus explored further in the data visualisation portions. 
+
+The first data visualisation was the plot of total number of cases and deaths in the world over time, to gain a broad overview of the spread and impact of Covid-19 on the world. The following code was used to overlay the lines of “Total Cases” and “Total Deaths”, with the right Y axis denoting the scale for the new deaths. geom_line( ) was first used to create two separate blue and red lines for Total Cases and Total Deaths respectively. As noted above, deaths are significantly lower than cases, hence, to examine the difference in shape between the two graphs, the value for total deaths was initially multiplied by 100 in the geom_line( ) function. However, to adjust the secondary right y-axis for total deaths, this was multiplied by 100 within scale_y_continuous( ) to retain the numerical integrity of the variable. For better visualisation, each variable and their corresponding y-axis was separately coloured.
+```{r}
+ggplot(world_covid_weekly,aes(x=date))+
+  geom_line(aes(y=total_cases),col="blue")+
+  geom_line(aes(y=total_deaths*100),col="red")+
+  scale_y_continuous(name="Total Cases", 
+                     sec.axis=sec_axis(~./100,name="Total Deaths"))+
+  theme(
+    axisaxis.title.y.left=element_text(color="blue"),
+    axis.text.y.left=element_text(color="blue"),
+    axis.title.y.right=element_text(color="red"),
+    axis.text.y.right=element_text(color="red")
+  )+ 
+  ggtitle("Total Covid-19 Cases and Deaths in the World")
+```
+
+The graph illustrates the trajectory of the growth of Covid-19, via both its number of cases and its mortality rate. It should be noted that the scale for deaths is 100 times smaller than the scale for cases. The graph illustrates a largely exponential growth in cases around the world from 2020 to 2023, in which a spike in cases was observed at the start of 2023. This then plateaued from 2023 to 2024. Deaths, on the other hand, grew at a largely steady rate until 2023, when it began to plateau as well. 
+This graph provides us with a good overview of the Covid-19 situation across the world, yet more insight through understanding the occurrences of new cases and deaths across time. Hence, the second data visualisation pursued was of new cases and new deaths in the world. 
+To automate the process of creating two separate graphs for new cases and new deaths, a function was created. The function takes in the input of the dataframe, variable, the intended colour of the geom_line and the intended title of the graph, and produces the output of the graph for each variable respectively. This automation was suggested by Copilot when my code was initially input for enhancements, and will be evaluated later on.
+
+```{r}
+#| label: Function creation of data visualisation of new cases and deaths
+datavis_world <- function(data, metric, color, title) {
+  ggplot(data, aes(y = date, x = .data[[metric]])) +
+    geom_line(color = color) +
+    labs(x = "Date", y = metric, title = title)
+}
+
+world_newcases_plot <- datavis_world(world_covid_weekly,"new_cases","orange",
+                                         "New Covid-19 Cases in the World")
+world_newcases_plot
+world_newdeaths_plot <- datavis_world(world_covid_weekly,"new_deaths","blue",
+                                          "New Covid-19 Deaths in the World")
+world_newdeaths_plot
+```
+```{r}
+#| label: Initial code
+world_newcases_plot <- ggplot(world_covid_weekly,aes(date,y=new_cases))+
+  geom_line(colour="orange")
+world_newdeaths_plot <- ggplot(world_covid_weekly,aes(x=date,y=new_deaths))+
+  geom_line(colour="blue")
+```
+
+From the graph “New Covid-19 Cases in the World”, it can be seen that Covid-19 cases spiked at the start of 2022 and the start of 2023, with relatively minor quarterly surges. In “New Covid-19 Deaths in the World”, new deaths peaked at the start of 2021, and started to decline. While there was a spike at the start of 2023, this fell sharply after and plateaued.
+To better compare the two, I overlay the two graphs, similar to the first data visualisation graph for total cases and deaths, with the following code. The scale factor for new deaths was set to 200 to better observe the shape of the graph in relation to the shape of the new cases graph.
+
+```{r}
+ggplot(world_covid_weekly,aes(x=date))+
+  geom_line(aes(y=new_cases),col="blue")+
+  geom_line(aes(y=new_deaths*200),col="red")+
+  scale_y_continuous(name="New Cases", sec.axis=sec_axis(~./200,name="New Deaths"))+
+  theme(
+    axisaxis.title.y.left=element_text(color="blue"),
+    axis.text.y.left=element_text(color="blue"),
+    axis.title.y.right=element_text(color="red"),
+    axis.text.y.right=element_text(color="red")
+  )+ 
+  ggtitle("New Covid-19 Cases and Deaths in the World")
+```
+
+From comparing the shape of both plots, a few insights can be gleaned. Firstly, the death rate ratio between the death rate and new cases was high and steady between 2020 to 2022. Secondly, there was a notable difference in ratio of deaths to cases in 2022 and 2023. While cases increased twofold from the start of 2022 to the start of 2023, the number of deaths that resulted from that spike remained the same. This indicates that mortality rates from Covid-19 halved within the span of a year, suggesting that public health policies across the world was effective in mitigating the fatality of the disease. 
+
+#Covid-19 Impacts by Income Group
+To further explore the impact of income on Covid-19 survival rate, a new Rscript titled “Covid-19-by-income.R” was created. To meet these ends, a new dataframe “covid_by_income” was created, filtering for elements “High-income countries”, “Low-income countries”, “Upper-middle income countries”, “Lower-middle income countries”, as provided by the original dataset. Location was also renamed to “income_group” to better represent the variable. 
+```{r}
+#| label: Creating new dataframe
+covid_by_income <- covid_df_raw%>%
+  rename(income_group = location)%>%
+  filter(grepl("countries",income_group))
+view(covid_by_income)
+```
+
+I noticed that the data was only updated weekly, similar to the previous dataframe. Hence, the following filter was applied, in order to mitigate the effects of 0 values on the graph.  
+```{r}
+#| label: Recoding into weekly
+covid_by_income_weekly <- covid_by_income%>%
+  filter("new_cases" != 0)
+view(covid_by_income_weekly)
+```
+
+To study the effects of income group on Covid-19 survival rates, I created a new variable “survival_rate” using the mutate( ) function. 
+```{r}
+#| label: New column for survival rate
+covid_by_income_weekly <- covid_by_income_weekly%>%
+  mutate(survival_rate = (total_cases-total_deaths)/total_cases)%>%
+  select(date,income_group,survival_rate)
+view(covid_by_income_weekly)
+covid_income_survivalrate$date <- as.Date(covid_income_survivalrate$date)
+```
+
+The last line of code was derived from a suggestion by Copilot, as the initial code on its own caused the variable “Date” to change into a double vector format.
+
+Several values contained NaN, which I converted to NA through the following code. 
+```{r}
+#| label: Converting NaN to NA
+covid_income_survivalrate <- covid_income_survivalrate%>%
+  mutate_all(~ifelse(is.nan(.), NA, .))
+covid_income_survivalrate$date <- as.Date(covid_income_survivalrate$date)
+
+```
+
+To prepare to run the plot for survival rate by income, the dataframe “covid_income_survivalrate” required filtering of rows. A skim through the dataframe via view( ) showed that survival rates were mostly greater than 0.85, hence I filtered for survival rates to be greater than 0.85. Furthermore, as I intend to assess the long-term impacts of income on Covid-19 survival rates in different countries, short term spikes in cases and deaths during the very start of the pandemic created unnecessary noise in the graph. Hence, dates before 2020-06-01 were excluded from the new dataframe.
+
+```{r}
+#| label: Fitering rows
+covid_income_survivalrate$date <- as.Date(covid_income_survivalrate$date)
+filtered_covid_income_survivalrate <- covid_income_survivalrate%>%
+  dplyr::filter(survival_rate>0.85 & date>"2020-06-01")
+view(filtered_covid_income_survivalrate)
+```
+
+With the aim to plot graphical lines for each income group, the x and y axis were designated as “date” and “survival rate” respectively, and geom_line( ) was employed to plot the line graphs. Using scale_color_manual( ), I designated each income group to a colour for easier visualisation. Labs( ) enabled me to modify axis and title labels. 
+```{r}
+covid_income_survival_plot <- ggplot(filtered_covid_income_survivalrate,
+                                     aes(x=date,y=survival_rate,
+                                         colour=income_group))+
+  geom_line()+
+  scale_color_manual(
+    name = "Income Group",
+    values = c("High-income countries" = "blue",
+               "Low-income countries" = "red",
+               "Lower-middle-income countries" = "brown",
+               "Upper-middle-income countries" = "orange")
+  ) +
+  labs(title = "Covid-19 Survival Rate by Income",
+       y = "Survival Rate",
+       x = "Date")
+covid_income_survival_plot
+
+```
+
+The graph shows that after 2022, survival rates spiked across all income groups. However, as survival rates plateaued, there were notable differences in survival rates by income group. Countries with higher income experienced higher survival rates, while countries with lower income experienced lower survival rates.
+
+#Use of Copilot
+Copilot was used to suggest tweaks, enhancements and debugs to my code. Two instances where I did adopt Copilot’s suggestions was in creating a function to automate the creation of my graph, and a date format conversion to debug my automatic date conversions. This was effective in creating a more efficient code and provide debug solutions. Furthermore, Copilot provided several solutions to one problem, allowing me to evaluate each option thoroughly.
+However, there were several instances where Copilot came up with variables that did not exist in the dataset to be input into the enhanced code. Copilot-generated codes thus need to be scrutinised before adoption. Furthermore, the debug produced by Copilot had to be run several times throughout the Rscript for it to work, without clear explanation.  
+Overall, I believe that Copilot is a great collaborative tool when it comes to computing. Throughout the assignment, it meaningfully facilitated the smooth production of my code. Yet, I believe it should only be used in the final stages of code refinement and debugging instead of code generation, due to its tendency to introduce external ideas and complicated methods. 
